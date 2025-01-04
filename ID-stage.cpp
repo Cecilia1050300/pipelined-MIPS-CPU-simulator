@@ -5,34 +5,34 @@
 
 using namespace std;
 
-// «ü¥Oµ²ºc
+// æŒ‡ä»¤çµæ§‹
 struct Instruction {
-    string opcode;  // ¾Ş§@½X (¦p R, LW, SW, BEQ)
-    int rs;         // ¨Ó·½¼È¦s¾¹1
-    int rt;         // ¨Ó·½¼È¦s¾¹2©Î¥Ø¼Ğ¼È¦s¾¹
-    int rd;         // ¥Ø¼Ğ¼È¦s¾¹ (¶È¹ï R-format«ü¥O¦³®Ä)
-    int immediate;  // ¥ß§Y­È (¶È¹ï I-format«ü¥O¦³®Ä)
+    string opcode;  // æ“ä½œç¢¼ (å¦‚ R, LW, SW, BEQ)
+    int rs;         // ä¾†æºæš«å­˜å™¨1
+    int rt;         // ä¾†æºæš«å­˜å™¨2æˆ–ç›®æ¨™æš«å­˜å™¨
+    int rd;         // ç›®æ¨™æš«å­˜å™¨ (åƒ…å° R-formatæŒ‡ä»¤æœ‰æ•ˆ)
+    int immediate;  // ç«‹å³å€¼ (åƒ…å° I-formatæŒ‡ä»¤æœ‰æ•ˆ)
 };
 
-// ID/EX ¼È¦s¾¹ (¥Î©ó ID -> EX ¸ê®Æ¶Ç»¼)
+// ID/EX æš«å­˜å™¨ (ç”¨æ–¼ ID -> EX è³‡æ–™å‚³é)
 struct ID_EX_Register {
-    int readData1;            // ±q¼È¦s¾¹Åª¨úªº¸ê®Æ1
-    int readData2;            // ±q¼È¦s¾¹Åª¨úªº¸ê®Æ2
-    int immediate;            // ¸Ñ½X«áªº¥ß§Y­È
-    int rs, rt, rd;           // ¼È¦s¾¹½s¸¹
-    string ALUOp;             // ALU ¾Ş§@
-    bool RegWrite = false;    // ¬O§_¼g¦^¼È¦s¾¹
-    bool MemRead = false;     // ¬O§_Åª°O¾ĞÅé
-    bool MemWrite = false;    // ¬O§_¼g°O¾ĞÅé
-    bool Branch=false;        // ¬O§_¬°¤À¤ä«ü¥O
+    int readData1;            // å¾æš«å­˜å™¨è®€å–çš„è³‡æ–™1
+    int readData2;            // å¾æš«å­˜å™¨è®€å–çš„è³‡æ–™2
+    int immediate;            // è§£ç¢¼å¾Œçš„ç«‹å³å€¼
+    int rs, rt, rd;           // æš«å­˜å™¨ç·¨è™Ÿ
+    string ALUOp;             // ALU æ“ä½œ
+    bool RegWrite = false;    // æ˜¯å¦å¯«å›æš«å­˜å™¨
+    bool MemRead = false;     // æ˜¯å¦è®€è¨˜æ†¶é«”
+    bool MemWrite = false;    // æ˜¯å¦å¯«è¨˜æ†¶é«”
+    bool Branch=false;        // æ˜¯å¦ç‚ºåˆ†æ”¯æŒ‡ä»¤
 };
 
-// ¼ÒÀÀ¼È¦s¾¹ÀÉ®×
-vector<int> registers(32, 0); // 32 ­Ó¼È¦s¾¹
+// æ¨¡æ“¬æš«å­˜å™¨æª”æ¡ˆ
+vector<int> registers(32, 0); // 32 å€‹æš«å­˜å™¨
 
-// ±±¨î«H¸¹¥Í¦¨¾¹¡A¾Ş§@½X¸ÑªR
+// æ§åˆ¶ä¿¡è™Ÿç”Ÿæˆå™¨ï¼Œæ“ä½œç¢¼è§£æ
 void generateControlSignals(const string& opcode, ID_EX_Register& idExReg) {
-    if (opcode == "R") { // R-format«ü¥O
+    if (opcode == "R") { // R-formatæŒ‡ä»¤
         idExReg.ALUOp = "R";
         idExReg.RegWrite = true;
     }
@@ -51,32 +51,32 @@ void generateControlSignals(const string& opcode, ID_EX_Register& idExReg) {
     }
 }
 
-// ID ¶¥¬q¼ÒÀÀ
+// ID éšæ®µæ¨¡æ“¬
 void instructionDecode(const Instruction& instr, ID_EX_Register& idExReg) {
-    // ±q¼È¦s¾¹ÀÉ®×Åª¨ú¸ê®Æ
-    idExReg.readData1 = registers[instr.rs]; //¸ÑªR¾Ş§@¼Æ
-    idExReg.readData2 = registers[instr.rt]; //¸ÑªR¾Ş§@¼Æ
+    // å¾æš«å­˜å™¨æª”æ¡ˆè®€å–è³‡æ–™
+    idExReg.readData1 = registers[instr.rs]; //è§£ææ“ä½œæ•¸
+    idExReg.readData2 = registers[instr.rt]; //è§£ææ“ä½œæ•¸
     idExReg.rs = instr.rs;
     idExReg.rt = instr.rt;
     idExReg.rd = instr.rd;
     idExReg.immediate = instr.immediate;
 
-    // ¥Í¦¨±±¨î«H¸¹
+    // ç”Ÿæˆæ§åˆ¶ä¿¡è™Ÿ
     generateControlSignals(instr.opcode, idExReg);
 
-    cout << "[ID] ¸Ñ½X§¹¦¨¡A±±¨î«H¸¹»P¸ê®Æ¤w¼g¤J ID/EX ¼È¦s¾¹¡C\n";
+    cout << "[ID] è§£ç¢¼å®Œæˆï¼Œæ§åˆ¶ä¿¡è™Ÿèˆ‡è³‡æ–™å·²å¯«å…¥ ID/EX æš«å­˜å™¨ã€‚\n";
 }
 
 
 
-// ¥Dµ{¦¡
+// ä¸»ç¨‹å¼
 int main() {
-    // ªì©l¤Æ¼È¦s¾¹ÀÉ®× (¼ÒÀÀ)
+    // åˆå§‹åŒ–æš«å­˜å™¨æª”æ¡ˆ (æ¨¡æ“¬)
     registers[8] = 5;  // $t0
     registers[9] = 10; // $t1
     registers[10] = 15; // $t2
 
-    // «ü¥O¶°¦X (¼ÒÀÀ)
+    // æŒ‡ä»¤é›†åˆ (æ¨¡æ“¬)
     vector<Instruction> instructions = {
         {"R", 9, 10, 8, 0},       // ADD $t0, $t1, $t2
         {"LW", 9, 8, 0, 4},       // LW $t0, 4($t1)
@@ -84,13 +84,13 @@ int main() {
         {"BEQ", 8, 9, 0, 2}       // BEQ $t0, $t1, offset 2
     };
 
-    ID_EX_Register idExReg; // ID -> EX ¼È¦s¾¹
+    ID_EX_Register idExReg; // ID -> EX æš«å­˜å™¨
 
     for (const auto& instr : instructions) {
         cout << "====================\n";
-        cout << "³B²z«ü¥O¡G" << instr.opcode << "\n";
+        cout << "è™•ç†æŒ‡ä»¤ï¼š" << instr.opcode << "\n";
 
-        // ID ¶¥¬q
+        // ID éšæ®µ
         instructionDecode(instr, idExReg);
 
         
@@ -98,3 +98,10 @@ int main() {
 
     return 0;
 }
+
+
+
+/*#include <unordered_map> æ˜¯ C++ æ¨™æº–æ¨¡æ¿åº«ï¼ˆSTLï¼‰ä¸­çš„ä¸€å€‹æ¨™é ­æª”æ¡ˆï¼Œç”¨ä¾†æä¾› å“ˆå¸Œè¡¨ (Hash Table) å®¹å™¨â€”â€”å³ std::unordered_mapã€‚
+
+å®ƒçš„ä¸»è¦ç‰¹é»æ˜¯ä»¥éµå€¼å° (key-value pairs) çš„å½¢å¼å„²å­˜è³‡æ–™ï¼Œä¸¦ä½¿ç”¨å“ˆå¸Œå‡½æ•¸ä¾†å¯¦ç¾é«˜æ•ˆçš„éµå€¼æŸ¥è©¢å’Œæ’å…¥æ“ä½œã€‚é€™èˆ‡ std::map çš„çµæ§‹ä¸åŒï¼Œstd::map æ˜¯åŸºæ–¼å¹³è¡¡äºŒå…ƒæœå°‹æ¨¹ (å¦‚ç´…é»‘æ¨¹) å¯¦ç¾çš„ï¼Œéµå€¼æ˜¯æœ‰åºçš„ï¼›è€Œ std::unordered_map æ˜¯ç„¡åºçš„ï¼Œä½†æŸ¥è©¢é€Ÿåº¦æ›´å¿«ï¼ˆå¹³å‡ç‚º O(1) æ™‚é–“è¤‡é›œåº¦ï¼‰ã€‚*/
+
