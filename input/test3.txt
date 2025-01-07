@@ -1,0 +1,14 @@
+lw $2, 8($0)
+lw $3, 16($0) 
+beq $2, $3, 1
+add $4, $2, $3
+sw $4, 24($0)
+
+
+
+3.forwarding與data hazard相關設計想法:
+因為有四種指令可能造成data hazard，分別為
+a.lw:lw要在MEM階段將值存入，且在WB階段才能使用所以在case
+b.beq: beq指令在ID階段就會判斷了
+c.add/sub:會在EX階段執行，使用forwarding技術可以在MEM階段使用。
+d.sw:會在ex階段使用到前面指令的結果。
