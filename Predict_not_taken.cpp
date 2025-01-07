@@ -158,9 +158,9 @@ void EX(const string& resultFilename) {
     int ALUInput1 = ID_EX.readData1;
     int ALUInput2 = ID_EX.readData2;
 
-    //predict not taken
-    if (ID_EX.ALUOp == "SUB" && ID_EX.Branch) { // 處理 BEQ 指令
-        if (ALUInput1 == ALUInput2) { // 分支條件成立
+    //predict not taken部分
+    if (ID_EX.ALUOp == "SUB" && ID_EX.Branch) { // 處理beq
+        if (ALUInput1 == ALUInput2) { //branch條件成立
             IF_PCSrc = 1;
             branchTargetAddress = IF_ID.pc + (ID_EX.immediate << 2); // 計算目標地址
         }
@@ -171,6 +171,7 @@ void EX(const string& resultFilename) {
     else if (ID_EX.ALUOp == "SUB") {
         EX_MEM.ALUResult = ALUInput1 - ALUInput2;
     }
+    
     EX_MEM.writeData = ID_EX.readData2;
     EX_MEM.rd = ID_EX.rd;
     EX_MEM.RegWrite = ID_EX.RegWrite;
