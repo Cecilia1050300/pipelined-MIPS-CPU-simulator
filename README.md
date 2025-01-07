@@ -19,7 +19,17 @@
 
 
 ##
-## 3.forwarding與data hazard相關設計想法:
+## 3.語言選擇
+### 使用C++語言製作此專案
+a. 上網搜尋後發現python是寫大多數模擬器專案的最佳語言選擇，開發效率高、且處理輸入.json檔案方便。  
+b. 選擇C++的原因  
+&nbsp;&nbsp;&nbsp;&nbsp;1.但由於組員們普遍對python不熟悉  
+&nbsp;&nbsp;&nbsp;&nbsp;2.不太會需要使用到python外掛套件  
+&nbsp;&nbsp;&nbsp;&nbsp;3.效能需求:如果模擬器執行的測試指令數量較多，或者 Pipeline 階段的模擬較複雜，C++的高效能能確保執行速度不成問題  
+&nbsp;&nbsp;&nbsp;&nbsp;4.豐富的資料結構(STL標準模板庫):可以用 queue模擬每個 Pipeline 階段的執行指令，且靈活度高。  
+&nbsp;&nbsp;&nbsp;&nbsp;5.C++的語言特性更接近硬體邏輯  
+##
+## 4.forwarding與data hazard相關設計想法:
 因為有四種指令可能造成data hazard，分別為
 a.lw:lw要在MEM階段將值存入，且在WB階段才能使用所以在case
 b.beq: beq指令在ID階段就會判斷了
