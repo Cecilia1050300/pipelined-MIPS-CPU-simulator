@@ -1,0 +1,50 @@
+// EX 階段
+void EX(const string& resultFilename) {
+    ofstream outfile(resultFilename, ios::app);
+    
+    // 如果沒有指令需要執行，則執行 NOP
+    if (ID_EX.ALUOp.empty()) {
+        outfile << "EX : NOP" << endl;
+        return;
+    }
+
+    // ALU 操作數
+    int ALUInput1 = ID_EX.readData1;
+    int ALUInput2 = ID_EX.readData2;
+
+    // 處理分支指令 (beq)
+    if (ID_EX.ALUOp == "SUB" && ID_EX.Branch) {
+        if (ALUInput1 == ALUInput2) { // 分支條件成立
+            IF_PCSrc = 1; // 啟用分支跳轉
+            branchTargetAddress = IF_ID.pc + (ID_EX.immediate << 2); // 計算目標地址
+        }
+    } 
+    // 處理記憶體指令 (lw 和 sw)
+    else if (ID_EX.ALUOp == "ADD" && (ID_EX.MemRead || ID_EX.MemWrite)) {
+        // 計算目標地址：基址 + 偏移量
+        EX_MEM.ALUResult = ALUInput1 + ID_EX.immediate;
+    } 
+    // 處理一般算術指令 (add)
+    else if (ID_EX.ALUOp == "ADD") {
+        EX_MEM.ALUResult = ALUInput1 + ALUInput2;
+    } 
+    // 處理一般算術指令 (sub)
+    else if (ID_EX.ALUOp == "SUB") {
+        EX_MEM.ALUResult = ALUInput1 - ALUInput2;
+    }
+
+    // 將結果保存到 EX_MEM 暫存器
+    EX_MEM.writeData = ID_EX.readData2;       // 用於 sw 的數據
+    EX_MEM.rd = ID_EX.rd;                     // 目標暫存器
+    EX_MEM.RegWrite = ID_EX.RegWrite;         // 是否寫回暫存器
+    EX_MEM.MemRead = ID_EX.MemRead;           // 是否讀取記憶體
+    EX_MEM.MemWrite = ID_EX.MemWrite;         // 是否寫入記憶體
+
+    // 輸出執行結果
+    outfile << "EX : ALUResult=" << EX_MEM.ALUResult 
+            << " MemRead=" << EX_MEM.MemRead 
+            << " MemWrite=" << EX_MEM.MemWrite 
+            << " RegWrite=" << EX_MEM.RegWrite << endl;
+    
+    outfile.close();
+}
