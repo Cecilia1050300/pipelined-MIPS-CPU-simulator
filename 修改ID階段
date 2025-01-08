@@ -1,0 +1,29 @@
+// ID 階段
+void ID(const string& resultFilename) {
+    ofstream outfile(resultFilename, ios::app);
+    if (IF_ID.instruction == "NOP") {
+        outfile << "ID : NOP" << endl;
+        return;
+    }
+    Instruction instr = parseInstruction(IF_ID.instruction);
+    ID_EX.readData1 = registers[instr.rs];
+    ID_EX.readData2 = registers[instr.rt];
+    ID_EX.rs = instr.rs;
+    ID_EX.rt = instr.rt;
+    ID_EX.rd = instr.rd;
+    ID_EX.immediate = instr.immediate;
+    generateControlSignals(instr.opcode, ID_EX);
+
+    // 新增：計算目標地址
+    if (instr.opcode == "BEQ") {
+        branchTargetAddress = IF_ID.pc + (instr.immediate << 2); // 計算目標地址
+    }
+
+    // 新增：暫存器比較器
+    if (instr.opcode == "BEQ" && registers[instr.rs] == registers[instr.rt]) {
+        IF_PCSrc = 1; // 如果條件成立，啟動分支跳轉
+    }
+
+    outfile << "ID : opcode=" << instr.opcode << endl;
+    outfile.close();
+}
