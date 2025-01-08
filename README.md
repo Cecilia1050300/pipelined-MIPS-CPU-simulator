@@ -1,5 +1,4 @@
 # pipelined-MIPS-CPU-simulator
-##
 ## 抱歉main branch超級亂
 因為一開始沒有很會使用github，所以不知道要先建立自己的branch，然後確認最終版本後才放上main，所以全部東西都塞在main、、、。
 且因為沒有在本地載Git，所以用Github網頁版很難做更改，因此目前不只main branch亂七八糟，branch也亂七八糟，但該有的東西還是有拉，就請稍微找一下，很拍謝~~
