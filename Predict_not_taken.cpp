@@ -97,15 +97,15 @@ void IF(const string& resultFilename) {
         return;
     }
 
-    // 預測分支未成立
-    if (IF_PCSrc == 1) { // 分支目標跳轉已決定
+    //預測未成立
+    if (IF_PCSrc == 1) { //跳轉目標已決定
         PC = branchTargetAddress;
-        Cyc[0] = "NOP"; // 沖刷錯誤指令
+        Cyc[0] = "NOP"; //沖刷錯誤指令
         IF_PCSrc = 0;
         return;
     }
 
-    // 按序執行下一條指令
+    //執行下一條指令
     if (PC >= instructions.size()) {
         Cyc[0] = "NOP";
         return;
