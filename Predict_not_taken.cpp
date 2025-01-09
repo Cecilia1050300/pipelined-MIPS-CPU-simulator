@@ -4,6 +4,7 @@
 #include <vector>
 #include <sstream>
 #include <unordered_map>
+#include <algorithm>
 using namespace std;
 
 // 模擬全域變數
@@ -68,74 +69,58 @@ string getOpcode(const string& instruction) {
     return opcode;
 }
 
-// 將指令字串解析為結構
+// 解析指令
 struct Instruction {
     string opcode;
-    int rs, rt, rd, immediate;
+    int rs = 0, rt = 0, rd = 0, immediate = 0;
 };
 Instruction parseInstruction(const string& instruction) {
     Instruction instr;
     istringstream stream(instruction);
-    stream >> instr.opcode >> instr.rs >> instr.rt >> instr.rd >> instr.immediate;
+    stream >> instr.opcode;
+    if (instr.opcode == "LW" || instr.opcode == "SW") {
+        stream >> instr.rt >> instr.immediate >> instr.rs;
+    }
+    else if (instr.opcode == "BEQ") {
+        stream >> instr.rs >> instr.rt >> instr.immediate;
+    }
+    else { // 算術指令
+        stream >> instr.rd >> instr.rs >> instr.rt;
+    }
     return instr;
 }
 
 // IF 階段
 void IF(const string& resultFilename) {
-    ofstream outfile(resultFilename, ios::app);
-    if (IF_PCSrc == 1) {
-        PC = branchTargetAddress;
-        Cyc[0] = "NOP";
-        outfile << "IF : NOP (branch)" << endl;
-        IF_PCSrc = 0;
-        return;
-    }
     if (IF_stall_count > 0) {
-        outfile << "IF : " << getOpcode(Cyc[0]) << " (stalled)" << endl;
         IF_stall_count--;
         return;
     }
-    if (PC >= instructions.size()) {
-        Cyc[0] = "NOP";
-        outfile << "IF : NOP" << endl;
+
+    // 預測分支未成立
+    if (IF_PCSrc == 1) { // 分支目標跳轉已決定
+        PC = branchTargetAddress;
+        Cyc[0] = "NOP"; // 沖刷錯誤指令
+        IF_PCSrc = 0;
         return;
     }
+
+    // 按序執行下一條指令
+    if (PC >= instructions.size()) {
+        Cyc[0] = "NOP";
+        return;
+    }
+
     Cyc[0] = instructions[PC];
     IF_ID.instruction = Cyc[0];
     IF_ID.pc = PC;
     PC++;
-    outfile << "IF : " << getOpcode(Cyc[0]) << endl;
-    outfile.close();
-}
-
-// 生成控制信號
-void generateControlSignals(const string& opcode, ID_EX_Register& idExReg) {
-    if (opcode == "R") {
-        idExReg.ALUOp = "R";
-        idExReg.RegWrite = true;
-    }
-    else if (opcode == "LW") {
-        idExReg.ALUOp = "ADD";
-        idExReg.RegWrite = true;
-        idExReg.MemRead = true;
-    }
-    else if (opcode == "SW") {
-        idExReg.ALUOp = "ADD";
-        idExReg.MemWrite = true;
-    }
-    else if (opcode == "BEQ") {
-        idExReg.ALUOp = "SUB";
-        idExReg.Branch = true;
-    }
 }
 
 // ID 階段
 void ID(const string& resultFilename) {
-    ofstream outfile(resultFilename, ios::app);
-    if (IF_ID.instruction == "NOP") {
-        outfile << "ID : NOP" << endl;
-        return;
-    }
+    if (IF_ID.instruction == "NOP") return;
+
     Instruction instr = parseInstruction(IF_ID.instruction);
     ID_EX.readData1 = registers[instr.rs];
     ID_EX.readData2 = registers[instr.rt];
@@ -143,91 +128,189 @@ void ID(const string& resultFilename) {
     ID_EX.rt = instr.rt;
     ID_EX.rd = instr.rd;
     ID_EX.immediate = instr.immediate;
-    generateControlSignals(instr.opcode, ID_EX);
-    outfile << "ID : opcode=" << instr.opcode << endl;
-    outfile.close();
+
+    if (instr.opcode == "BEQ") {
+        ID_EX.ALUOp = "SUB";
+        ID_EX.Branch = true;
+
+        if (registers[instr.rs] == registers[instr.rt]) {
+            IF_PCSrc = 1;
+            branchTargetAddress = IF_ID.pc + (instr.immediate << 2);
+        }
+    }
+    else if (instr.opcode == "LW") {
+        ID_EX.ALUOp = "ADD";
+        ID_EX.MemRead = true;
+        ID_EX.RegWrite = true;
+    }
+    else if (instr.opcode == "SW") {
+        ID_EX.ALUOp = "ADD";
+        ID_EX.MemWrite = true;
+    }
+    else if (instr.opcode == "ADD" || instr.opcode == "SUB") {
+        ID_EX.ALUOp = instr.opcode;
+        ID_EX.RegWrite = true;
+    }
+
+    if (instr.opcode == "BEQ" && registers[instr.rs] == registers[instr.rt]) {
+        IF_PCSrc = 1;
+        branchTargetAddress = IF_ID.pc + (instr.immediate << 2);
+    }
 }
 
 // EX 階段
 void EX(const string& resultFilename) {
-    ofstream outfile(resultFilename, ios::app);
-    if (ID_EX.ALUOp.empty()) {
-        outfile << "EX : NOP" << endl;
-        return;
-    }
-    int ALUInput1 = ID_EX.readData1;
-    int ALUInput2 = ID_EX.readData2;
+    if (ID_EX.ALUOp.empty()) return;
 
-    //predict not taken部分
-    if (ID_EX.ALUOp == "SUB" && ID_EX.Branch) { // 處理beq
-        if (ALUInput1 == ALUInput2) { //branch條件成立
-            IF_PCSrc = 1;
-            branchTargetAddress = IF_ID.pc + (ID_EX.immediate << 2); // 計算目標地址
-        }
-    }
-    else if (ID_EX.ALUOp == "ADD") {
+    int ALUInput1 = ID_EX.readData1;
+    int ALUInput2 = ID_EX.MemRead || ID_EX.MemWrite ? ID_EX.immediate : ID_EX.readData2;
+
+    if (ID_EX.ALUOp == "ADD") {
         EX_MEM.ALUResult = ALUInput1 + ALUInput2;
     }
     else if (ID_EX.ALUOp == "SUB") {
         EX_MEM.ALUResult = ALUInput1 - ALUInput2;
     }
-    
+
     EX_MEM.writeData = ID_EX.readData2;
     EX_MEM.rd = ID_EX.rd;
-    EX_MEM.RegWrite = ID_EX.RegWrite;
     EX_MEM.MemRead = ID_EX.MemRead;
     EX_MEM.MemWrite = ID_EX.MemWrite;
-    outfile << "EX : ALUResult=" << EX_MEM.ALUResult << endl;
-    outfile.close();
+    EX_MEM.RegWrite = ID_EX.RegWrite;
 }
 
 // MEM 階段
 void MEM(const string& resultFilename) {
-    ofstream outfile(resultFilename, ios::app);
-    if (!EX_MEM.MemRead && !EX_MEM.MemWrite) {
-        outfile << "MEM : NOP" << endl;
-        return;
-    }
+    if (!EX_MEM.MemRead && !EX_MEM.MemWrite) return;
+
     if (EX_MEM.MemRead) {
         MEM_WB.readData = memory[EX_MEM.ALUResult];
     }
     if (EX_MEM.MemWrite) {
         memory[EX_MEM.ALUResult] = EX_MEM.writeData;
     }
+
     MEM_WB.ALUResult = EX_MEM.ALUResult;
     MEM_WB.rd = EX_MEM.rd;
     MEM_WB.RegWrite = EX_MEM.RegWrite;
-    outfile << "MEM : " << (EX_MEM.MemRead ? "Read" : "Write") << endl;
-    outfile.close();
 }
 
 // WB 階段
 void WB(const string& resultFilename) {
-    ofstream outfile(resultFilename, ios::app);
-    if (!MEM_WB.RegWrite) {
-        outfile << "WB : NOP" << endl;
-        return;
+    if (!MEM_WB.RegWrite) return;
+
+    if (MEM_WB.readData != 0) {
+        registers[MEM_WB.rd] = MEM_WB.readData;
     }
-    registers[MEM_WB.rd] = MEM_WB.readData ? MEM_WB.readData : MEM_WB.ALUResult;
-    outfile << "WB : RegWrite to R" << MEM_WB.rd << endl;
-    outfile.close();
+    else {
+        registers[MEM_WB.rd] = MEM_WB.ALUResult;
+    }
 }
+
+void printPipeline(ofstream& outfile, string stages[], int cycle) {
+    outfile << "Cycle " << cycle << endl;
+
+    for (int i = 0; i < 5; ++i) {
+        if (stages[i] != "NOP") {
+            string stageName;
+            switch (i) {
+            case 0: stageName = "IF"; break;
+            case 1: stageName = "ID"; break;
+            case 2: stageName = "EX"; break;
+            case 3: stageName = "MEM"; break;
+            case 4: stageName = "WB"; break;
+            }
+            outfile << stages[i] << ":" << stageName;
+
+            // 根據階段附加信號值
+            if (stageName == "EX") {
+                outfile << " RegDst=" << (ID_EX.RegWrite ? "1" : "0")
+                    << " ALUSrc=" << (ID_EX.MemRead || ID_EX.MemWrite ? "1" : "0")
+                    << " Branch=" << (ID_EX.Branch ? "1" : "0")
+                    << " MemRead=" << (ID_EX.MemRead ? "1" : "0")
+                    << " MemWrite=" << (ID_EX.MemWrite ? "1" : "0")
+                    << " RegWrite=" << (ID_EX.RegWrite ? "1" : "0")
+                    << " MemtoReg=" << (ID_EX.MemRead ? "1" : "0");
+            }
+            else if (stageName == "MEM") {
+                outfile << " Branch=" << (EX_MEM.MemRead ? "1" : "0")
+                    << " MemRead=" << (EX_MEM.MemRead ? "1" : "0")
+                    << " MemWrite=" << (EX_MEM.MemWrite ? "1" : "0")
+                    << " RegWrite=" << (EX_MEM.RegWrite ? "1" : "0")
+                    << " MemtoReg=" << (EX_MEM.MemRead ? "1" : "0");
+            }
+            else if (stageName == "WB") {
+                outfile << " RegWrite=" << (MEM_WB.RegWrite ? "1" : "0")
+                    << " MemtoReg=" << (MEM_WB.readData != 0 ? "1" : "X");
+            }
+            outfile << endl;
+        }
+    }
+    outfile << "-----------------------------\n";
+}
+
 
 int main() {
     string instructionFile = "test3.txt";
-    string resultFile = "result2.txt";
+    string resultFile = "result444.txt";
     loadInstructions(instructionFile);
 
+    // 初始化暫存器與記憶體
+    registers[0] = 0;
+    memory[8] = 10;
+    memory[16] = 20;
+
+    // 清空輸出檔案
     ofstream clearFile(resultFile, ios::trunc);
     clearFile.close();
 
-    for (int cycle = 0; cycle < instructions.size() + 4; ++cycle) {
+    int totalInstructions = instructions.size();
+    int totalCycles = totalInstructions + 4; // 考慮指令數 + 管線填充週期
+
+    // 初始化管線階段狀態
+    string stages[5] = { "NOP", "NOP", "NOP", "NOP", "NOP" };
+
+    // 週期迴圈
+    for (int cycle = 1; cycle <= totalCycles; ++cycle) {
+        ofstream outfile(resultFile, ios::app);
+
+        // 執行各階段函式
         WB(resultFile);
         MEM(resultFile);
         EX(resultFile);
         ID(resultFile);
         IF(resultFile);
+
+        // 更新階段狀態
+        stages[4] = stages[3]; // WB <- MEM
+        stages[3] = stages[2]; // MEM <- EX
+        stages[2] = stages[1]; // EX <- ID
+        stages[1] = stages[0]; // ID <- IF
+        stages[0] = Cyc[0];    // IF <- 新取指令
+
+        // 輸出當前週期流水線狀態
+        printPipeline(outfile, stages, cycle);
+
+        outfile.close();
     }
+
+    // 最終結果輸出
+    ofstream outfile(resultFile, ios::app);
+    outfile << "## Final Result:\n";
+    outfile << "Total Cycles: " << totalCycles << "\n\n";
+
+    outfile << "Final Register Values:\n";
+    for (int i = 0; i < 32; ++i) {
+        outfile << registers[i] << " ";
+    }
+    outfile << "\n\n";
+
+    outfile << "Final Memory Values:\n";
+    for (int i = 0; i < 32; ++i) { // 假設需要顯示前 32 個記憶體位置
+        outfile << memory[i] << " ";
+    }
+    outfile << "\n";
+    outfile.close();
 
     cout << "模擬完成，結果已輸出至 " << resultFile << endl;
     return 0;
