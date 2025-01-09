@@ -136,7 +136,7 @@ void ID(const string& resultFilename) {
         if (registers[instr.rs] == registers[instr.rt]) {
             IF_PCSrc = 1;
             branchTargetAddress = IF_ID.pc + (instr.immediate << 2);
-        }
+        }//新增ㄉ部分
     }
     else if (instr.opcode == "LW") {
         ID_EX.ALUOp = "ADD";
