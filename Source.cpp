@@ -1,404 +1,402 @@
 #include <iostream>
-#include <vector>
-#include <string>
-#include <queue>
 #include <fstream>
+#include <cstring>
 #include <sstream>
-#include <stdexcept>
-
+#include <queue>
 using namespace std;
 
-const int NUM_REGISTERS = 32;  // ©w¸q±H¦s¾¹¼Æ¶q
-const int MEMORY_SIZE = 32;    // ©w¸q°O¾ÐÅé¤j¤p
+ofstream outfile;
+fstream file;
 
-// instructionµ²ºc
-struct Instruction {
-    string op;      // «ü¥O¾Þ§@¡] "add", "sub", "lw", "sw", "beq"¡^
-    int rd, rs, rt; // ¼È¦s¾¹¾¹
-    int immediate;  // ¥ß§Y¼Æ¡]¨Ï¥Î©ó¥ß§Y¼Æ¾Þ§@©ÎªÌ¤À¤ä«ü¥O¡^
-    int address;    // ¦a§}¡]°O¾ÐÅé¦s¨ú¡^
+stringstream ss;
+int registers[32] = { 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
+int memory[32] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
+queue<string> instructions;
+int cycle = 1;
+bool EXHazard_Rs = false;
+bool EXHazard_Rt = false;
+bool MEMHazard_Rs = false;
+bool MEMHazard_Rt = false;
+bool LoadUseHazard = false;
 
-    // ªì©l¤Æ
-    Instruction() : op(""), rd(-1), rs(-1), rt(-1), immediate(-1), address(-1) {}
+struct PipelineStage {
+    string Op = "";        // æ“ä½œç¢¼ï¼ˆæŒ‡ä»¤é¡žåž‹ï¼Œå¦‚ "lw", "add" ç­‰ï¼‰
+    string Instruction;
 
-    // ±a°Ñ¼Æªº«Øºc¨ç¼Æ¡A¥Î©óªì©l¤Æ«ü¥Oªº¦U­Ó¦¨­û
-    Instruction(const string& op, int rd, int rs, int rt, int immediate, int address = -1)
-        : op(op), rd(rd), rs(rs), rt(rt), immediate(immediate), address(address) {}
+    int Rs = 0;            // å¯„å­˜å™¨1
+    int Rt = 0;            // å¯„å­˜å™¨2
+    int Rd = 0;            // å¯„å­˜å™¨
+    int PC = 0;
+
+    int Immediate = 0;     // ç«‹å³æ•¸
+    int ALUResult = 0;     // ALU è¨ˆç®—çµæžœ
+    int ReadData = 0;      
+    int ReadData1 = 0;
+    int ReadData2 = 0;
+
+    bool RegWrite = false; // æ˜¯å¦å¯«å›žå¯„å­˜å™¨
+    bool MemtoReg = false; // æ˜¯å¦å¾žè¨˜æ†¶é«”å¯«å›žå¯„å­˜å™¨
+    bool MemRead = false;  // è¨˜æ†¶é«”è®€å–
+    bool MemWrite = false; // è¨˜æ†¶é«”å¯«å…¥
+    bool Branch = false;   // åˆ†æ”¯æŒ‡ä»¤
+    bool ALUSrc = false;   // æ˜¯å¦ä½¿ç”¨ç«‹å³æ•¸
+    bool RegDst = false;   // è¨»å†Šç›®çš„ä½å€
+    bool nop = false;      // NOP (ç©ºæ“ä½œï¼Œé€šå¸¸ç”¨æ–¼é˜²æ­¢è¡çª)
 };
 
-// ³B²z¿é¤J¸ê®Æ
-// ¥h°£¦r¦ê­º§ÀªÅ¥Õ¦r¤¸
-string trim(const string& str) {
-    size_t first = str.find_first_not_of(" \t");  // §ä¨ì²Ä¤@­Ó«DªÅ¥Õ¦r¤¸
-    size_t last = str.find_last_not_of(" \t");   // §ä¨ì³Ì«á¤@­Ó«DªÅ¥Õ¦r¤¸
-    return (first == string::npos || last == string::npos) ? "" : str.substr(first, last - first + 1);
+PipelineStage IF, ID, EX, MEM, WB;
+
+int parseRegister(const string& reg) {
+    return stoi(reg.substr(1));  
 }
 
-// ¤ÀªR«ü¥O
-Instruction parseInstruction(const string& line) {
-    Instruction inst;
-    istringstream iss(line);
-    string token;
+int parseImmediate(const string& part) {
+    size_t openParen = part.find('(');
+    return stoi(part.substr(0, openParen));
+}
 
-    try {
-        // ¸ÑªR "add", "sub", "lw"
-        if (!(iss >> inst.op)) {
-            throw runtime_error("Missing operation");
+int parseBaseRegister(const string& part) {
+    size_t openParen = part.find('(');
+    size_t closeParen = part.find(')');
+    return stoi(part.substr(part.find('$') + 1, closeParen - openParen - 2));
+}
+
+void IF_state() {
+    if (!instructions.empty()) {
+        IF.Instruction = instructions.front();
+        instructions.pop();
+    }
+    else {
+        IF.Instruction = ""; 
+    }
+
+    string reg1, reg2, reg3_or_offset;
+    ss.str(IF.Instruction);
+    ss.clear();
+    ss >> IF.Op;
+
+    if (IF.Op == "lw" || IF.Op == "sw") {
+        ss >> reg1 >> reg2;
+        IF.Rt = parseRegister(reg1);
+        IF.Rs = parseBaseRegister(reg2);
+        IF.Immediate = parseImmediate(reg2);
+    }
+    else if (IF.Op == "add" || IF.Op == "sub") {
+        ss >> reg1 >> reg2 >> reg3_or_offset;
+        IF.Rd = parseRegister(reg1);
+        IF.Rs = parseRegister(reg2);
+        IF.Rt = parseRegister(reg3_or_offset);
+    }
+    else if (IF.Op == "beq") {
+        ss >> reg1 >> reg2 >> reg3_or_offset;
+        IF.Rs = parseRegister(reg1);
+        IF.Rt = parseRegister(reg2);
+    }
+
+    ss.str("");
+    ss.clear();
+}
+
+void ID_state() {
+    if (LoadUseHazard) {
+        ID.nop = true;
+        return; 
+    }
+
+    ID.nop = IF.nop;
+    ss << IF.Instruction;
+    ss >> ID.Op; 
+
+    if (ID.Op == "lw") {
+        string regPart, memoryPart;
+        ss >> regPart;
+        ss.ignore();
+        ss >> memoryPart;
+
+        ID.Rt = parseRegister(regPart);
+        ID.Rs = parseBaseRegister(memoryPart);
+        ID.Immediate = parseImmediate(memoryPart);
+    }
+    else if (ID.Op == "sw") {
+        string regPart, memoryPart;
+        ss >> regPart;
+        ss.ignore();
+        ss >> memoryPart;
+
+        ID.Rt = parseBaseRegister(memoryPart);
+        ID.Rs = parseRegister(regPart);
+        ID.Immediate = parseImmediate(memoryPart);
+    }
+    else if (ID.Op == "add" || ID.Op == "sub") {
+        string rd, rs, rt;
+        ss >> rd >> rs >> rt;
+
+        ID.Rd = parseRegister(rd);
+        ID.Rs = parseRegister(rs);
+        ID.Rt = parseRegister(rt);
+    }
+    else if (ID.Op == "beq") {
+        string rs, rt, offset;
+        ss >> rs >> rt >> offset;
+
+        ID.Rs = parseRegister(rs);
+        ID.Rt = parseRegister(rt);
+        ID.Immediate = parseImmediate(offset);
+    }
+
+    ss.str("");
+    ss.clear();
+    IF = PipelineStage();
+}
+
+void EX_state() {
+    EX.nop = ID.nop;
+    EX.Op = ID.Op;
+
+    int forwardRsValue = registers[ID.Rs];
+    int forwardRtValue = registers[ID.Rt];
+
+    if (EXHazard_Rs) forwardRsValue = EX.ALUResult;
+    else if (MEMHazard_Rs) forwardRsValue = MEM.ALUResult;
+
+    if (EXHazard_Rt) forwardRtValue = EX.ALUResult;
+    else if (MEMHazard_Rt) forwardRtValue = MEM.ALUResult;
+
+    if (EX.RegWrite && EX.Rd != 0 && EX.Rd == ID.Rs) {
+        ID.ReadData1 = EX.ALUResult; 
+    }
+    if (MEM.RegWrite && MEM.Rd != 0 && MEM.Rd == ID.Rs) {
+        ID.ReadData1 = MEM.ReadData; 
+    }
+
+    if (EX.Op == "beq") {
+        if (forwardRsValue == forwardRtValue) {
+            IF.PC += EX.Immediate; 
+            IF = PipelineStage();
+            ID = PipelineStage();
         }
+    }
 
-        // ®Ú¾Ú¤£¦Pªº¾Þ§@²Å¸ÑªR¤£¦Pªº«ü¥O®æ¦¡
-        if (inst.op == "lw" || inst.op == "sw") {  // Load/Store
-            string rd, offset;
-            if (!(iss >> rd >> offset)) {
-                throw runtime_error("Invalid lw/sw format");
-            }
+    if (EX.Op == "lw") {
+        EX.Rs = ID.Rs;
+        EX.Rt = ID.Rt;
+        EX.Immediate = ID.Immediate;
+        EX.RegDst = 0; EX.ALUSrc = 1; EX.MemtoReg = 1; EX.RegWrite = 1; EX.MemRead = 1; EX.MemWrite = 0; EX.Branch = 0;
+        EX.ALUResult = forwardRsValue + EX.Immediate / 4;
+    }
+    else if (EX.Op == "sw") {
+        EX.Rs = ID.Rs;
+        EX.Rt = ID.Rt;
+        EX.Immediate = ID.Immediate;
+        EX.RegDst = 0; EX.ALUSrc = 1; EX.MemtoReg = 0; EX.RegWrite = 0; EX.MemRead = 0; EX.MemWrite = 1; EX.Branch = 0;
+        EX.ALUResult = forwardRsValue + EX.Immediate / 4;
+    }
+    else if (EX.Op == "add" || EX.Op == "sub") {
+        EX.Rd = ID.Rd;
+        EX.Rs = ID.Rs;
+        EX.Rt = ID.Rt;
+        EX.RegDst = 1; EX.ALUSrc = 0; EX.MemtoReg = 0; EX.RegWrite = 1; EX.MemRead = 0; EX.MemWrite = 0; EX.Branch = 0;
 
-            rd = trim(rd);
-            rd.pop_back(); // ¥h±¼³r¸¹
-
-            //±o¥X¬A¸¹¤ºªº­È
-            size_t start = offset.find('(');
-            size_t end = offset.find(')');
-
-            if (start == string::npos || end == string::npos) {
-                throw runtime_error("Invalid memory access format");
-            }
-
-            inst.rd = stoi(rd.substr(1)); // ´£¨ú±H¦s¾¹½s¸¹
-            inst.address = stoi(offset.substr(0, start));
-            inst.rs = stoi(offset.substr(start + 2, end - start - 2));
+        if (EX.Op == "add") {
+            EX.ALUResult = forwardRsValue + forwardRtValue;
         }
-        else if (inst.op == "beq") {
-            string rs, rt;
-            if (!(iss >> rs >> rt >> inst.immediate)) {
-                throw runtime_error("Invalid beq format");
-            }
-
-            rs = trim(rs);
-            rt = trim(rt);
-            rs.pop_back();  // ¥h±¼³r¸¹
-            rt.pop_back();  // ¥h±¼³r¸¹
-
-            inst.rs = stoi(rs.substr(1));  // ´£¨ú±H¦s¾¹½s¸¹
-            inst.rt = stoi(rt.substr(1));  // ´£¨ú±H¦s¾¹½s¸¹
+        else if (EX.Op == "sub") {
+            EX.ALUResult = forwardRsValue - forwardRtValue;
         }
-        else if (inst.op == "add" || inst.op == "sub") {  // ºâ³N¹Bºâ
-            string rd, rs, rt;
-            if (!(iss >> rd >> rs >> rt)) {
-                throw runtime_error("Invalid add/sub format");
-            }
+    }
+    ID = PipelineStage();
+}
 
-            rd = trim(rd);
-            rs = trim(rs);
-            rt = trim(rt);
+void MEM_state() {
+    MEM.nop = EX.nop;
+    MEM.Op = EX.Op;
+    MEM.Rs = EX.Rs;
+    MEM.Rt = EX.Rt;
+    MEM.Rd = EX.Rd;
+    MEM.ALUResult = EX.ALUResult;
+    MEM.RegDst = EX.RegDst;
+    MEM.MemtoReg = EX.MemtoReg;
+    MEM.RegWrite = EX.RegWrite;
+    MEM.MemRead = EX.MemRead;
+    MEM.MemWrite = EX.MemWrite;
+    MEM.Branch = EX.Branch;
 
-            // ¥h°£¥½§Àªº³r¸¹
-            if (rd.back() == ',') rd.pop_back();
-            if (rs.back() == ',') rs.pop_back();
-            if (rt.back() == ',') rt.pop_back();
 
-            // ÀË¬d±H¦s¾¹®æ¦¡¬O§_¥¿½T
-            if (rd[0] != '$' || rs[0] != '$' || rt[0] != '$') {
-                throw runtime_error("Invalid register format: " + rd + ", " + rs + ", " + rt);
-            }
+    if (MEM.MemRead) {
+        MEM.ReadData = memory[MEM.ALUResult];
+    }
+    else if (MEM.MemWrite) {
+        memory[MEM.ALUResult] = registers[MEM.Rs];
+    }
+    EX = PipelineStage();
+}
 
-            inst.rd = stoi(rd.substr(1));  // ´£¨ú¨ÃÂà´«±H¦s¾¹½s¸¹
-            inst.rs = stoi(rs.substr(1));
-            inst.rt = stoi(rt.substr(1));
-        }
-        else if (inst.op == "nop") {  // No operation (ªÅ¾Þ§@)
-            // µL»Ý³B²z
+void WB_state() {
+    WB.nop = MEM.nop;
+    WB.Op = MEM.Op;
+    WB.Rs = MEM.Rs;
+    WB.Rt = MEM.Rt;
+    WB.Rd = MEM.Rd;
+    WB.RegDst = MEM.RegDst;
+    WB.RegWrite = MEM.RegWrite;
+    WB.MemtoReg = MEM.MemtoReg;
+
+    if (WB.RegWrite) {
+        if (WB.MemtoReg) {
+            registers[WB.Rt] = MEM.ReadData;
         }
         else {
-            throw runtime_error("Unknown operation: " + inst.op);
+            registers[WB.Rd] = MEM.ALUResult;
         }
     }
-    catch (const exception& e) {
-        cerr << "Error parsing line: " << line << ". Error: " << e.what() << endl;
-        inst.op = "nop";  // ·í¸ÑªR¿ù»~®É¡A±N«ü¥O³]¸m¬° "nop"
-    }
-
-    return inst;
+    MEM = PipelineStage();
 }
 
-// pipeline
-struct Pipeline {
-    vector<int> registers;  // ±H¦s¾¹¼Æ²Õ
-    vector<int> memory;     // °O¾ÐÅé¼Æ²Õ
-    vector<Instruction> instructions;  // Àx¦s«ü¥Oªº®e¾¹
-    queue<Instruction> pipeline[5];  // ¬y¤ô½uªº¤­­Ó¶¥¬q
-    int pc;  // ­p¼Æ¾¹
-    int cycle;  // ¶g´Á¬ö¿ý
-    vector<string> a_Output;  // ¿é¥X°O¿ý
+void detectEXHazard() { // Should Forwarding
+    EXHazard_Rs = false;
+    EXHazard_Rt = false;
 
-    Pipeline() {
-        registers.resize(NUM_REGISTERS, 1);  // ªì©l¤Æ±H¦s¾¹
-        registers[0] = 0;  // $0 ±H¦s¾¹¬° 0
-        memory.resize(MEMORY_SIZE, 1);  // ªì©l¤Æ°O¾ÐÅé
-        pc = 0;  // ³]¸mµ{¦¡­p¼Æ¾¹¬° 0
-        cycle = 0;  // ³]¸mªì©l¶g´Á¬° 0
-    }
-
-    // ¸ü¤J«ü¥O
-    void loadInstructions(const vector<Instruction>& insts) {
-        instructions = insts;
-    }
-
-
-    void IF();
-    bool ID();
-    void EX();
-    void MEM();
-    void WB();
-    void cyclecount(ofstream& output);
-};
-
-// ±±¨î«H¸¹
-string controlSignals(const string& op) {
-    if (op == "lw")  return "RegDst=0 ALUSrc=1 Branch=0 MemRead=1 MemWrite=0 RegWrite=1 MemToReg=1";
-    if (op == "sw")  return "RegDst=X ALUSrc=1 Branch=0 MemRead=0 MemWrite=1 RegWrite=0 MemToReg=X";
-    if (op == "add") return "RegDst=1 ALUSrc=0 Branch=0 MemRead=0 MemWrite=0 RegWrite=1 MemToReg=0";
-    if (op == "sub") return "RegDst=1 ALUSrc=0 Branch=0 MemRead=0 MemWrite=0 RegWrite=1 MemToReg=0";
-    if (op == "beq") return "RegDst=X ALUSrc=0 Branch=1 MemRead=0 MemWrite=0 RegWrite=0 MemToReg=X";
-    if (op == "nop") return "NOP";
-    return "RegDst=X ALUSrc=X Branch=X MemRead=X MemWrite=X RegWrite=X MemToReg=X";
-}
-
-// IF ¶¥¬q
-void Pipeline::IF() {
-    // ÀË¬dµ{¦¡­p¼Æ¾¹¬O§_¶W¥X«ü¥O½d³ò
-    if (pc < (int)instructions.size()) {
-        Instruction inst = instructions[pc];
-        pipeline[0].push(inst);           // ±N«ü¥O©ñ¤J IF ¶¥¬q¡]pipeline[0]¡^
-        a_Output.push_back(inst.op + " IF");
-        pc++;  // ¹w´ú¤£¸õÂà¡G§ì¨ú¤U¤@±ø«ü¥O
-    }
-}
-
-// ID¶¥¬q & hazard°»´ú
-bool Pipeline::ID() {
-    if (pipeline[0].empty()) return false;
-
-    Instruction inst = pipeline[0].front();
-    bool needsStall = false;
-
-    // ÀË¬d EX ¶¥¬q
-    if (!pipeline[2].empty()) {
-        Instruction prevEX = pipeline[2].front();
-        bool prevEXWritesRegister =
-            (prevEX.op == "add" || prevEX.op == "sub" || prevEX.op == "lw");
-
-        // ¦pªG EX ¶¥¬q¼g¤Jªº±H¦s¾¹¬O·í«e«ü¥Oªº rs ©Î rt¡A«h»Ý­n stall
-        if (prevEXWritesRegister && prevEX.rd != 0) {
-            if (prevEX.rd == inst.rs || prevEX.rd == inst.rt) {
-                if (prevEX.op == "lw") {
-                    needsStall = true;  // data hazard
-                }
-            }
+    if (EX.RegWrite == true && EX.Rd != 0) {
+        if (EX.Rd == ID.Rs) {
+            EXHazard_Rs = true;
+        }
+        if (EX.Rd == ID.Rt) {
+            EXHazard_Rt = true;
         }
     }
-
-    // ÀË¬d MEM ¶¥¬q
-    if (!pipeline[3].empty()) {
-        Instruction prevMEM = pipeline[3].front();
-        bool prevMEMWritesRegister =
-            (prevMEM.op == "add" || prevMEM.op == "sub" || prevMEM.op == "lw");
-
-        // ¦pªG MEM ¶¥¬q¼g¤Jªº±H¦s¾¹¬O·í«e«ü¥Oªº rs ©Î rt¡A«h»Ý­n stall
-        if (prevMEMWritesRegister && prevMEM.rd != 0) {
-            if (prevMEM.rd == inst.rs || prevMEM.rd == inst.rt) {
-                if (prevMEM.op == "lw") {
-                    needsStall = true;
-                }
-            }
-        }
-    }
-
-
-    if (inst.op == "beq") {
-        // ÀË¬d EX ¶¥¬q (pipeline[2])
-        if (!pipeline[2].empty()) {
-            Instruction exInst = pipeline[2].front();
-            if (exInst.rd != 0 && (exInst.rd == inst.rs || exInst.rd == inst.rt)) {
-                if (exInst.op == "sub" || exInst.op == "lw") {
-                    needsStall = true;
-                }
-            }
-        }
-
-        // ÀË¬d MEM ¶¥¬q (pipeline[3])
-        if (!pipeline[3].empty()) {
-            Instruction memInst = pipeline[3].front();
-            if (memInst.rd != 0 && (memInst.rd == inst.rs || memInst.rd == inst.rt)) {
-                if (memInst.op == "lw") {
-                    needsStall = true;
-                }
-            }
-        }
-    }
-
-    if (needsStall) {
-        Instruction bubble = { "nop", -1, -1, -1, -1 };
-        pipeline[1].push(bubble);
-        a_Output.push_back(inst.op + " ID");
-        return true;  // ¦^¶Ç true ªí¥Ü»Ý­n stall
-    }
-
-    pipeline[0].pop();      // IF -> ²¾°£¤w³B²zªº«ü¥O
-    pipeline[1].push(inst); // ID <- ©ñ¤J·í«e«ü¥O
-    a_Output.push_back(inst.op + " ID");
-    return false;
 }
 
-// EX ¶¥¬q
-void Pipeline::EX() {
-    if (pipeline[1].empty()) return;
+void detectMEMHazard() { // Should Forwarding
+    MEMHazard_Rs = false;
+    MEMHazard_Rt = false;
+    if (MEM.RegWrite == true && MEM.Rd != 0) {
+        if (MEM.Rd == ID.Rs && !EXHazard_Rs) {
+            MEMHazard_Rs = true;
+        }
+        if (MEM.Rd == ID.Rt && !EXHazard_Rt) {
+            MEMHazard_Rt = true;
+        }
 
-    Instruction inst = pipeline[1].front();
-    pipeline[1].pop();
+    }
+}
 
-    if (inst.op == "nop") {
-        pipeline[2].push(inst);
-        return;
+void detectLoadUseHazard() { // Should Stall (unavoidable)
+    if (EX.Op == "lw" && (EX.Rt == ID.Rs || EX.Rt == ID.Rt)) {
+        LoadUseHazard = true;
+    }
+    else if ((MEM.Op == "lw" && ID.Op == "beq") && (MEM.Rd == EX.Rs || MEM.Rd == EX.Rt)) {
+        LoadUseHazard = true;
+    }
+    else if ((EX.Op == "add" || EX.Op == "sub") && ID.Op == "beq" && (EX.Rd == ID.Rs || EX.Rd == ID.Rt)) {
+        LoadUseHazard = true;
+    }
+    else {
+        LoadUseHazard = false;
     }
 
-    if (inst.op == "beq") {
-        int rsValue = registers[inst.rs];
-        int rtValue = registers[inst.rt];
+}
 
-        if (rsValue == rtValue) {
-            // ¤À¤ä³Q°õ¦æ¡A½Õ¾ãµ{¦¡­p¼Æ¾¹
-            pc = pc + inst.immediate - 1;
-            while (!pipeline[0].empty()) {
-                pipeline[0].pop();
-            }
+void printState() {
+    outfile << endl << "Cycle " << cycle << ":" << endl;
+    if (WB.Op != "") {
+        outfile << WB.Op << " WB ";
+        if (WB.Op == "sw" || WB.Op == "beq") {
+            outfile << "RegWrite=" << WB.RegWrite << " MemToReg=X" << endl;
+        }
+        else {
+            outfile << "RegWrite=" << WB.RegWrite << " MemToReg=" << WB.MemtoReg << endl;
         }
     }
-    else if (inst.op == "add") {
-        registers[inst.rd] = registers[inst.rs] + registers[inst.rt];
+    if (MEM.Op != "") {
+        outfile << MEM.Op << " MEM ";
+        if (MEM.Op == "sw") {
+            outfile << "Branch=" << MEM.Branch << " MemRead=" << MEM.MemRead << " MemWrite=" << MEM.MemWrite << " RegWrite=" << MEM.RegWrite << " MemToReg= X" << endl;
+        }
+        else if (MEM.Op == "beq") {
+            outfile << "Branch=1" << " MemRead=" << MEM.MemRead << " MemWrite=" << MEM.MemWrite << " RegWrite=" << MEM.RegWrite << " MemToReg= X" << endl;
+        }
+        else {
+            outfile << "Branch=" << MEM.Branch << " MemRead=" << MEM.MemRead << " MemWrite=" << MEM.MemWrite << " RegWrite=" << MEM.RegWrite << " MemToReg=" << MEM.MemtoReg << endl;
+        }
     }
-    else if (inst.op == "sub") {
-        registers[inst.rd] = registers[inst.rs] - registers[inst.rt];
+    if (EX.Op != "") {
+        outfile << EX.Op << " EX ";
+        if (EX.Op == "sw") {
+            outfile << "RegDst=X" << " ALUSrc=" << EX.ALUSrc << " Branch=" << EX.Branch << " MemRead=" << EX.MemRead << " MemWrite=" << EX.MemWrite << " RegWrite=" << EX.RegWrite << " MemToReg=X" << endl;
+        }
+        else if (EX.Op == "beq") {
+            outfile << "RegDst=X" << " ALUSrc=" << EX.ALUSrc << " Branch=1" << " MemRead=" << EX.MemRead << " MemWrite=" << EX.MemWrite << " RegWrite=" << EX.RegWrite << " MemToReg=X" << endl;
+        }
+        else {
+            outfile << "RegDst=" << EX.RegDst << " ALUSrc=" << EX.ALUSrc << " Branch=" << EX.Branch << " MemRead=" << EX.MemRead << " MemWrite=" << EX.MemWrite << " RegWrite=" << EX.RegWrite << " MemToReg=" << EX.MemtoReg << endl;
+
+        }
+
     }
+    if (ID.Op != "") {
 
-    pipeline[2].push(inst);
-    a_Output.push_back(inst.op + " EX " + controlSignals(inst.op));
-}
+        outfile << ID.Op << " ID " << endl;
 
-// MEM ¶¥¬q
-void Pipeline::MEM() {
-    if (pipeline[2].empty()) return;
-
-    Instruction inst = pipeline[2].front();
-    pipeline[2].pop();
-
-    if (inst.op == "nop") {
-        pipeline[3].push(inst);
-        return;
     }
-
-    if (inst.op == "lw") {
-        // °O¾ÐÅéÅª¨ú
-        registers[inst.rd] = memory[inst.address / 4];
+    if (IF.Instruction != "" && !IF.nop) {
+        string IFInstruction;
+        ss << IF.Instruction;
+        ss >> IFInstruction;
+        outfile << IFInstruction << " IF " << endl;
+        ss.str("");
+        ss.clear();
     }
-    else if (inst.op == "sw") {
-        // °O¾ÐÅé¼g¤J
-        memory[inst.address / 4] = registers[inst.rs];
-    }
-
-    pipeline[3].push(inst);
-    a_Output.push_back(inst.op + " MEM " + controlSignals(inst.op));
-}
-
-// WB ¶¥¬q
-void Pipeline::WB() {
-    if (pipeline[3].empty()) return;
-
-    Instruction inst = pipeline[3].front();
-    pipeline[3].pop();
-
-    if (inst.op == "nop") {
-        return;
-    }
-
-    a_Output.push_back(inst.op + " WB " + controlSignals(inst.op));
-}
-
-// ¶g´Á­pºâ¨Ã¿é¥Xµ²ªG
-void Pipeline::cyclecount(ofstream& output) {
-    a_Output.clear();
-
-    WB();
-    MEM();
-    EX();
-
-    bool stall = ID();
-    if (!stall) {
-        IF();
-    }
-
-    output << "Cycle " << ++cycle << ":\n";
-    for (const auto& out : a_Output) {
-        output << out << endl;
-    }
-    output << endl;
 }
 
 int main() {
-    Pipeline p;
-
-    ifstream input("test6.txt");  // ¸ü¤J«ü¥OÀÉ®×
-    ofstream output("test6output.txt");  // ¿é¥Xµ²ªG
-
-    if (!input.is_open() || !output.is_open()) {
-        cerr << "Error opening input or output file." << endl;
+    outfile.open("output.txt");
+    if (!outfile) {
+        cerr << "Error opening output file!" << endl;
         return 1;
     }
 
-    vector<Instruction> instructions;
-    string line;
-    while (getline(input, line)) {
-        instructions.push_back(parseInstruction(line));
+    file.open("test6.txt");
+    if (!file) {
+        throw "Can't open file";
     }
 
-    p.loadInstructions(instructions);
+    string instruction;
+    while (getline(file, instruction)) {
+        instructions.push(instruction);
+    }
+    file.close();
 
-    // «ùÄò¼ÒÀÀª½¨ìµ{¦¡µ²§ô
-    while (p.pc < (int)instructions.size() ||
-        !p.pipeline[0].empty() ||
-        !p.pipeline[1].empty() ||
-        !p.pipeline[2].empty() ||
-        !p.pipeline[3].empty())
-    {
-        p.cyclecount(output);
+    while (true) {
+        detectLoadUseHazard();
+        detectEXHazard();
+        detectMEMHazard();
+        WB_state();
+        MEM_state();
+        // å¦‚æžœæ²’æœ‰ Load-Use Hazard æ‰åŸ·è¡Œ
+        if (!LoadUseHazard) { 
+            EX_state();
+            ID_state();
+            IF_state();
+        }
+
+        if (IF.Instruction == "" && ID.Op == "" && EX.Op == "" && MEM.Op == "" && WB.Op == "") {
+            break;
+        }
+        printState();
+        cycle++;
+    }
+    outfile << endl << "##Final Result:";
+    outfile << endl << "Total Cycles : " << cycle - 1 << endl;
+
+    outfile << endl << "Final Register Values:" << endl;
+    for (int i = 0; i < 32; i++) {
+        outfile << registers[i] << " ";
     }
 
-    // ¿é¥X³Ì²×µ²ªG
-    output << "## Final Result:" << endl;
-    output << "Total Cycles: " << p.cycle << endl;
-
-    output << endl << "Final Register Values:" << endl;
-    for (int i = 0; i < NUM_REGISTERS; i++) {
-        output << p.registers[i] << " ";
+    outfile << endl << "Final Memory Values:" << endl;
+    for (int i = 0; i < 32; i++) {
+        outfile << memory[i] << " ";
     }
-    output << endl;
 
-    output << endl << "Final Memory Values:" << endl;
-    for (int i = 0; i < MEMORY_SIZE; i++) {
-        output << p.memory[i] << " ";
-    }
-    output << endl;
-
-    input.close();
-    output.close();
     return 0;
 }
-
-
-
-
-
-
-
-
-
