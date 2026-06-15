@@ -3,6 +3,7 @@
 #include <cstring>
 #include <sstream>
 #include <queue>
+#include <string>
 using namespace std;
 
 ofstream outfile;
@@ -348,16 +349,39 @@ void printState() {
     }
 }
 
-int main() {
-    outfile.open("output.txt");
+int main(int argc, char* argv[]) {
+    string inputPath = "inputs/test6.txt";
+    string outputPath = "outputs/test6.txt";
+
+    for (int i = 1; i < argc; i++) {
+        string arg = argv[i];
+        if ((arg == "--input" || arg == "-i") && i + 1 < argc) {
+            inputPath = argv[++i];
+        }
+        else if ((arg == "--output" || arg == "-o") && i + 1 < argc) {
+            outputPath = argv[++i];
+        }
+        else if (arg == "--help" || arg == "-h") {
+            cout << "Usage: mips-pipeline --input <input-file> --output <output-file>" << endl;
+            return 0;
+        }
+        else {
+            cerr << "Unknown or incomplete argument: " << arg << endl;
+            cerr << "Usage: mips-pipeline --input <input-file> --output <output-file>" << endl;
+            return 1;
+        }
+    }
+
+    outfile.open(outputPath);
     if (!outfile) {
         cerr << "Error opening output file!" << endl;
         return 1;
     }
 
-    file.open("test6.txt");
+    file.open(inputPath);
     if (!file) {
-        throw "Can't open file";
+        cerr << "Can't open input file: " << inputPath << endl;
+        return 1;
     }
 
     string instruction;
