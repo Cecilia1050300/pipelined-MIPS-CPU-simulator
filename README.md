@@ -2,6 +2,7 @@
 
 這是計算機組織期末專題的 Pipelined MIPS CPU 模擬器。專案以 C++ 實作五階段 pipeline，依照課堂規格輸出每個 clock cycle 中指令所在的 stage、控制訊號，以及程式結束後的 register / memory 狀態。
 
+This is a Pipelined MIPS CPU Simulator developed as a final project for a Computer Organization course. Implemented in C++, it simulates a classic 5-stage pipeline and outputs the instruction stage and control signals for each clock cycle, as well as the final register and memory states upon program completion, in accordance with the course specifications.
 ## 專案目標
 
 - 模擬五階段 MIPS pipeline：IF、ID、EX、MEM、WB
